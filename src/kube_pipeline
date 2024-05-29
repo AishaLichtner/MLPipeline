@@ -1,15 +1,49 @@
 import kfp
+from kfp.v2 import compiler
+from kfp.v2.dsl import component, Output, Model
+import requests
+import pickle
+import os
 from google.cloud import aiplatform
-from google_cloud_pipeline_components.v1.dataset import ImageDatasetCreateOp
-from google_cloud_pipeline_components.v1.automl.training_job import AutoMLImageTrainingJobRunOp
+from google_cloud_pipeline_components.v1.dataset import TabularDatasetCreateOp
 from google_cloud_pipeline_components.v1.endpoint import EndpointCreateOp, ModelDeployOp
 
-project_id = celtic-sunlight-424420-b8
-pipeline_root_path = https://console.cloud.google.com/storage/browser/aisha-bucket
+project_id = "celtic-sunlight-424420-b8"
+pipeline_root_path = "https://console.cloud.google.com/storage/browser/aisha-bucket"
+github_url = "to be maintained"
 
-# Define the workflow of the pipeline.
+@component
+def download_and_load_model_component(github_url: str, model_output: Output[Model]) -> None:
+    import requests
+    import pickle
+    import os
+    def download_and_load_model(github_url: str, local_path: str = '/tmp/model.pkl', ):
+        """
+        Download a model from GitHub and load it from a pickle file.
+        
+        Args:
+            github_url (str): The GitHub URL to the pickle file containing the model.
+            local_path (str): The local path to save the downloaded pickle file.
+        
+        Returns:
+            model: The loaded model.
+        """
+        response = requests.get(github_url)
+        response.raise_for_status()
+        
+        with open(local_path, 'wb') as file:
+            file.write(response.content)
+        
+        with open(local_path, 'rb') as file:
+            model = pickle.load(file)
+        return model
+    download_and_load_model(github_url)
+
+
+# Define the workf
+# low of the pipeline.
 @kfp.dsl.pipeline(
-    name="automl-image-training-v2",
+    name="forecast_deployment_pipeline",
     pipeline_root=pipeline_root_path)
 def pipeline(project_id: str):
     # The first step of your workflow is a dataset generator.
@@ -19,29 +53,17 @@ def pipeline(project_id: str):
     # output but not the actual returned object from the execution. The value
     # of the object is not accessible at the dsl.pipeline level, and can only be
     # retrieved by providing it as the input to a downstream component.
-    ds_op = ImageDatasetCreateOp(
-        project=project_id,
-        display_name="flowers",
-        gcs_source="gs://cloud-samples-data/vision/automl_classification/flowers/all_data_v2.csv",
-        import_schema_uri=aiplatform.schema.dataset.ioformat.image.single_label_classification,
-    )
 
+    ds_op = TabularDatasetCreateOp(
+        display_name = "asset_data", 
+        gcs_source= "gs://aisha-bucket",
+        project = project_id)
+    
     # The second step is a model training component. It takes the dataset
     # outputted from the first step, supplies it as an input argument to the
     # component (see `dataset=ds_op.outputs["dataset"]`), and will put its
     # outputs into `training_job_run_op`.
-    training_job_run_op = AutoMLImageTrainingJobRunOp(
-        project=project_id,
-        display_name="train-iris-automl-mbsdk-1",
-        prediction_type="classification",
-        model_type="CLOUD",
-        dataset=ds_op.outputs["dataset"],
-        model_display_name="iris-classification-model-mbsdk",
-        training_fraction_split=0.6,
-        validation_fraction_split=0.2,
-        test_fraction_split=0.2,
-        budget_milli_node_hours=8000,
-    )
+    download_and_load_model_op = download_and_load_model_component(github_url=github_url)
 
     # The third and fourth step are for deploying the model.
     create_endpoint_op = EndpointCreateOp(
@@ -50,8 +72,15 @@ def pipeline(project_id: str):
     )
 
     model_deploy_op = ModelDeployOp(
-        model=training_job_run_op.outputs["model"],
+        model=download_and_load_model_op.outputs['model_output'],
         endpoint=create_endpoint_op.outputs['endpoint'],
         automatic_resources_min_replica_count=1,
         automatic_resources_max_replica_count=1,
     )
+
+    if __name__ == "__main__":
+        client = kfp.Client()
+        compiler.Compiler().compile(
+        pipeline_func=pipeline,
+        package_path='forcast_deployment_pipeline.yaml'
+)
