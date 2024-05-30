@@ -1,0 +1,280 @@
+# PIPELINE DEFINITION
+# Name: forecast-deployment-pipeline
+# Inputs:
+#    project_id: str
+components:
+  comp-deploy-model-custom-trained-model-sample:
+    executorLabel: exec-deploy-model-custom-trained-model-sample
+    inputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+      parameters:
+        api_endpoint:
+          defaultValue: us-central1-aiplatform.googleapis.com
+          isOptional: true
+          parameterType: STRING
+        deployed_model_display_name:
+          parameterType: STRING
+        location:
+          parameterType: STRING
+        project:
+          parameterType: STRING
+        timeout:
+          defaultValue: 7200.0
+          isOptional: true
+          parameterType: NUMBER_INTEGER
+    outputDefinitions:
+      parameters:
+        Output:
+          parameterType: STRING
+  comp-download-and-load-model-component:
+    executorLabel: exec-download-and-load-model-component
+    inputDefinitions:
+      parameters:
+        github_url:
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        model_output:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+  comp-tabular-dataset-create:
+    executorLabel: exec-tabular-dataset-create
+    inputDefinitions:
+      parameters:
+        bq_source:
+          description: BigQuery URI to the input table. For example, "bq://project.dataset.table_name".
+          isOptional: true
+          parameterType: STRING
+        display_name:
+          description: The user-defined name of the Dataset. The name can be up to
+            128 characters long and can be consist of any UTF-8 characters.
+          parameterType: STRING
+        encryption_spec_key_name:
+          description: 'The Cloud KMS resource identifier of the customer managed
+            encryption key used to protect the Dataset. Has the form: `projects/my-project/locations/my-region/keyRings/my-kr/cryptoKeys/my-key`.
+            The key needs to be in the same region as where the compute resource is
+            created. If set, this Dataset and all sub-resources of this Dataset will
+            be secured by this key. Overrides `encryption_spec_key_name` set in `aiplatform.init`.'
+          isOptional: true
+          parameterType: STRING
+        gcs_source:
+          description: Google Cloud Storage URI(-s) to the input file(s). May contain
+            wildcards. For more information on wildcards, see https://cloud.google.com/storage/docs/gsutil/addlhelp/WildcardNames.
+            For example, `"gs://bucket/file.csv"` or `["gs://bucket/file1.csv", "gs://bucket/file2.csv"]`.
+          isOptional: true
+          parameterType: STRING
+        labels:
+          defaultValue: {}
+          description: Labels with user-defined metadata to organize your Tensorboards.
+            Label keys and values can be no longer than 64 characters (Unicode codepoints),
+            can only contain lowercase letters, numeric characters, underscores and
+            dashes. International characters are allowed. No more than 64 user labels
+            can be associated with one Tensorboard (System labels are excluded). See
+            https://goo.gl/xmQnxf for more information and examples of labels. System
+            reserved label keys are prefixed with "aiplatform.googleapis.com/" and
+            are immutable.
+          isOptional: true
+          parameterType: STRUCT
+        location:
+          defaultValue: us-central1
+          description: Optional location to retrieve Dataset from.
+          isOptional: true
+          parameterType: STRING
+        project:
+          defaultValue: '{{$.pipeline_google_cloud_project_id}}'
+          description: Project to retrieve Dataset from. Defaults to the project in
+            which the PipelineJob is run.
+          isOptional: true
+          parameterType: STRING
+    outputDefinitions:
+      artifacts:
+        dataset:
+          artifactType:
+            schemaTitle: google.VertexDataset
+            schemaVersion: 0.0.1
+          description: Instantiated representation of the managed tabular Dataset
+            resource.
+defaultPipelineRoot: https://console.cloud.google.com/storage/browser/aisha-bucket
+deploymentSpec:
+  executors:
+    exec-deploy-model-custom-trained-model-sample:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - deploy_model_custom_trained_model_sample
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef deploy_model_custom_trained_model_sample(\n    project: str,\n\
+          \    location: str,\n    model: Input[Model],\n    deployed_model_display_name:\
+          \ str,\n    api_endpoint: str = \"us-central1-aiplatform.googleapis.com\"\
+          ,\n    timeout: int = 7200,\n) -> str:\n    from google.cloud import aiplatform\n\
+          \    from google.cloud.aiplatform.gapic import EndpointServiceClient\n\n\
+          \    client_options = {\"api_endpoint\": api_endpoint}\n    client = EndpointServiceClient(client_options=client_options)\n\
+          \n    endpoint = client.create_endpoint(\n        parent=f\"projects/{project}/locations/{location}\"\
+          ,\n        endpoint={\"display_name\": deployed_model_display_name}\n  \
+          \  )\n    endpoint_id = endpoint.result().name\n\n    deployed_model = {\n\
+          \        \"model\": model.uri,\n        \"display_name\": deployed_model_display_name,\n\
+          \        \"dedicated_resources\": {\n            \"min_replica_count\":\
+          \ 1,\n            \"machine_spec\": {\n                \"machine_type\"\
+          : \"n1-standard-2\",\n            },\n        },\n    }\n    traffic_split\
+          \ = {\"0\": 100}\n    response = client.deploy_model(\n        endpoint=endpoint_id,\
+          \ deployed_model=deployed_model, traffic_split=traffic_split\n    )\n  \
+          \  response.result(timeout=timeout)\n    return endpoint_id\n\n"
+        image: python:3.7
+    exec-download-and-load-model-component:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - download_and_load_model_component
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.7.0'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"' && \"\
+          $0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef download_and_load_model_component(github_url: str, model_output:\
+          \ Output[Model]) -> None:\n    import requests\n    import pickle\n    import\
+          \ os\n    def download_and_load_model(github_url: str, local_path: str =\
+          \ '/tmp/model.pkl', ):\n        \"\"\"\n        Download a model from GitHub\
+          \ and load it from a pickle file.\n\n        Args:\n            github_url\
+          \ (str): The GitHub URL to the pickle file containing the model.\n     \
+          \       local_path (str): The local path to save the downloaded pickle file.\n\
+          \n        Returns:\n            model: The loaded model.\n        \"\"\"\
+          \n        response = requests.get(github_url)\n        response.raise_for_status()\n\
+          \n        with open(local_path, 'wb') as file:\n            file.write(response.content)\n\
+          \n        with open(local_path, 'rb') as file:\n            model = pickle.load(file)\n\
+          \        return model\n    download_and_load_model(github_url)\n\n"
+        image: python:3.7
+    exec-tabular-dataset-create:
+      container:
+        args:
+        - --method.project
+        - '{{$.inputs.parameters[''project'']}}'
+        - --method.location
+        - '{{$.inputs.parameters[''location'']}}'
+        - --method.display_name
+        - '{{$.inputs.parameters[''display_name'']}}'
+        - '{"IfPresent": {"InputName": "gcs_source", "Then": ["--method.gcs_source",
+          "{{$.inputs.parameters[''gcs_source'']}}"]}}'
+        - '{"IfPresent": {"InputName": "bq_source", "Then": ["--method.bq_source",
+          "{{$.inputs.parameters[''bq_source'']}}"]}}'
+        - --method.labels
+        - '{{$.inputs.parameters[''labels'']}}'
+        - '{"IfPresent": {"InputName": "encryption_spec_key_name", "Then": ["--method.encryption_spec_key_name",
+          "{{$.inputs.parameters[''encryption_spec_key_name'']}}"]}}'
+        - --executor_input
+        - '{{$}}'
+        - --resource_name_output_artifact_uri
+        - '{{$.outputs.artifacts[''dataset''].uri}}'
+        command:
+        - python3
+        - -m
+        - google_cloud_pipeline_components.container.v1.aiplatform.remote_runner
+        - --cls_name
+        - TabularDataset
+        - --method_name
+        - create
+        image: gcr.io/ml-pipeline/google-cloud-pipeline-components:2.13.1
+pipelineInfo:
+  name: forecast-deployment-pipeline
+root:
+  dag:
+    tasks:
+      deploy-model-custom-trained-model-sample:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-deploy-model-custom-trained-model-sample
+        dependentTasks:
+        - download-and-load-model-component
+        inputs:
+          artifacts:
+            model:
+              taskOutputArtifact:
+                outputArtifactKey: model_output
+                producerTask: download-and-load-model-component
+          parameters:
+            deployed_model_display_name:
+              runtimeValue:
+                constant: my-prophet-model
+            location:
+              runtimeValue:
+                constant: us-central1
+            project:
+              componentInputParameter: project_id
+        taskInfo:
+          name: deploy-model-custom-trained-model-sample
+      download-and-load-model-component:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-download-and-load-model-component
+        inputs:
+          parameters:
+            github_url:
+              runtimeValue:
+                constant: https://github.com/AishaLichtner/MLPipeline/blob/main/outputs/models/1036708_model.pkl
+        taskInfo:
+          name: download-and-load-model-component
+      tabular-dataset-create:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-tabular-dataset-create
+        inputs:
+          parameters:
+            display_name:
+              runtimeValue:
+                constant: future
+            gcs_source:
+              runtimeValue:
+                constant: gs://aisha-bucket
+            project:
+              componentInputParameter: project_id
+        taskInfo:
+          name: tabular-dataset-create
+  inputDefinitions:
+    parameters:
+      project_id:
+        parameterType: STRING
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.7.0

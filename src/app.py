@@ -1,55 +1,41 @@
 import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
-import plotly.express as px
+import requests
 
 # Initialize Dash app
 app = dash.Dash(__name__)
 
+# Define asset IDs and their corresponding model endpoints
+assets = {
+    'asset1': 'http://model_endpoint1.com/predict',
+    'asset2': 'http://model_endpoint2.com/predict',
+    'asset3': 'http://model_endpoint3.com/predict'
+}
+
 # Define app layout
 app.layout = html.Div([
     html.H1("Your Model Web App"),
-    html.Label("Enter Data:"),
-    dcc.Input(id="input_data", type="text", value=""),
-    html.Button("Submit", id="submit_button", n_clicks=0),
+    html.Label("Choose Asset ID:"),
+    dcc.Dropdown(id="asset_id_dropdown", options=[{'label': asset, 'value': asset} for asset in assets.keys()], value=list(assets.keys())[0]),
+    html.Button("Run Predictions", id="predict_button", n_clicks=0),
     html.Div(id="prediction_output"),
     dcc.Graph(id="performance_metrics_plot")
 ])
 
-# Define callback to update prediction output
+# Define callback to handle prediction
 @app.callback(
     Output("prediction_output", "children"),
-    [Input("submit_button", "n_clicks")],
-    [dash.dependencies.State("input_data", "value")]
+    [Input("predict_button", "n_clicks")],
+    [Input("asset_id_dropdown", "value")]
 )
-def update_prediction_output(n_clicks, input_data):
+def predict(n_clicks, asset_id):
     if n_clicks > 0:
-        # Call your model to generate predictions based on user input data
-        # Replace this with your actual model prediction code
-        predicted_values = run_model(input_data)
-        return f"Predicted Values: {predicted_values}"
-    else:
-        return ""
+        # Make HTTP request to the corresponding model endpoint based on the selected asset
+        endpoint = assets[asset_id]
+        response = requests.post(endpoint, json={'data': 'your_input_data'})
+        prediction_result = response.json()["prediction"]  # Assuming the response contains a 'prediction' key
+        return f"Prediction for {asset_id}: {prediction_result}"
 
-# Define callback to update performance metrics plot
-@app.callback(
-    Output("performance_metrics_plot", "figure"),
-    [Input("submit_button", "n_clicks")],
-    [dash.dependencies.State("input_data", "value")]
-)
-def update_performance_metrics_plot(n_clicks, input_data):
-    if n_clicks > 0:
-        # Calculate performance metrics based on the generated predictions
-        # Replace this with your actual performance metrics calculation code
-        performance_metrics_data = calculate_metrics(input_data)
-        
-        # Plot the performance metrics using plotly
-        # Replace this with your actual plotting code
-        fig = px.line(performance_metrics_data, x="x_axis_column", y="y_axis_column")
-        return fig
-    else:
-        return {}
-
-# Run the app
 if __name__ == "__main__":
     app.run_server(debug=True)
