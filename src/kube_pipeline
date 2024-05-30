@@ -1,6 +1,6 @@
 import kfp
 from kfp.v2 import compiler
-from kfp.v2.dsl import component, Output, Model
+from kfp.v2.dsl import component, Output, Model, Input
 import requests
 import pickle
 import os
@@ -10,7 +10,7 @@ from google_cloud_pipeline_components.v1.endpoint import EndpointCreateOp, Model
 
 project_id = "celtic-sunlight-424420-b8"
 pipeline_root_path = "https://console.cloud.google.com/storage/browser/aisha-bucket"
-github_url = "to be maintained"
+github_url = "https://github.com/AishaLichtner/MLPipeline/blob/main/outputs/models/1036708_model.pkl"
 
 @component
 def download_and_load_model_component(github_url: str, model_output: Output[Model]) -> None:
@@ -39,8 +39,46 @@ def download_and_load_model_component(github_url: str, model_output: Output[Mode
         return model
     download_and_load_model(github_url)
 
+@component
+def deploy_model_custom_trained_model_sample(
+    project: str,
+    location: str,
+    model: Input[Model],
+    deployed_model_display_name: str,
+    api_endpoint: str = "us-central1-aiplatform.googleapis.com",
+    timeout: int = 7200,
+) -> str:
+    from google.cloud import aiplatform
+    from google.cloud.aiplatform.gapic import EndpointServiceClient
 
-# Define the workf
+    client_options = {"api_endpoint": api_endpoint}
+    client = EndpointServiceClient(client_options=client_options)
+
+    endpoint = client.create_endpoint(
+        parent=f"projects/{project}/locations/{location}",
+        endpoint={"display_name": deployed_model_display_name}
+    )
+    endpoint_id = endpoint.result().name
+
+    deployed_model = {
+        "model": model.uri,
+        "display_name": deployed_model_display_name,
+        "dedicated_resources": {
+            "min_replica_count": 1,
+            "machine_spec": {
+                "machine_type": "n1-standard-2",
+            },
+        },
+    }
+    traffic_split = {"0": 100}
+    response = client.deploy_model(
+        endpoint=endpoint_id, deployed_model=deployed_model, traffic_split=traffic_split
+    )
+    response.result(timeout=timeout)
+    return endpoint_id
+
+
+# Workflow of the pipeline
 # low of the pipeline.
 @kfp.dsl.pipeline(
     name="forecast_deployment_pipeline",
@@ -55,27 +93,19 @@ def pipeline(project_id: str):
     # retrieved by providing it as the input to a downstream component.
 
     ds_op = TabularDatasetCreateOp(
-        display_name = "asset_data", 
+        display_name = "future", 
         gcs_source= "gs://aisha-bucket",
         project = project_id)
     
-    # The second step is a model training component. It takes the dataset
-    # outputted from the first step, supplies it as an input argument to the
-    # component (see `dataset=ds_op.outputs["dataset"]`), and will put its
-    # outputs into `training_job_run_op`.
+    # The second step is loading the trained model from GitHub
     download_and_load_model_op = download_and_load_model_component(github_url=github_url)
 
-    # The third and fourth step are for deploying the model.
-    create_endpoint_op = EndpointCreateOp(
+    #third step is create and endpoint and deploy the model to an endpoint
+    deploy_model_op = deploy_model_custom_trained_model_sample(
         project=project_id,
-        display_name = "create-endpoint",
-    )
-
-    model_deploy_op = ModelDeployOp(
+        location="us-central1",
         model=download_and_load_model_op.outputs['model_output'],
-        endpoint=create_endpoint_op.outputs['endpoint'],
-        automatic_resources_min_replica_count=1,
-        automatic_resources_max_replica_count=1,
+        deployed_model_display_name="my-prophet-model"
     )
 
     if __name__ == "__main__":
