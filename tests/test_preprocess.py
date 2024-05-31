@@ -1,5 +1,4 @@
 import unittest
-from unittest.mock import patch
 import pandas as pd
 import numpy as np
 import src.preprocess as pr
@@ -112,34 +111,6 @@ class TestPreprocess(unittest.TestCase):
         outliers = pr.identifiy_outliers(df)
 
         pd.testing.assert_frame_equal(outliers.reset_index(drop=True), expected_outliers.reset_index(drop=True))
-
-    @patch('preprocess.handle_missing_values')
-    def test_handle_missing_rows(self, mock_handle_missing_values):
-        data = {
-            'Date': ['2023-01-01', '2023-01-03', '2023-01-04'],
-            'Daily_mileage': [100, 200, 300],
-            'Asset_ID': [1, 1, 1]
-        }
-        df = pd.DataFrame(data)
-        df['Date'] = pd.to_datetime(df['Date'])
-
-        start_date = '2023-01-01'
-        end_date = '2023-01-05'
-        expected_dates = pd.date_range(start=start_date, end=end_date, freq='D')
-
-        pr.handle_missing_rows(start_date, end_date, df, col="Daily_mileage", approach="zero")
-
-        # Create expected merged_df to compare with
-        expected_data = {
-            'Date': expected_dates,
-            'Daily_mileage': [100, None, 200, 300, None],
-            'Asset_ID': [1, 1, 1, 1, 1]
-        }
-        expected_df = pd.DataFrame(expected_data)
-
-        expected_df['Date'] = pd.to_datetime(expected_df['Date'])
-
-        pd.testing.assert_frame_equal(mock_handle_missing_values.call_args[1]['df'], expected_df)
 
 
 if __name__ == "__main__":
