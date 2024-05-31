@@ -1,5 +1,3 @@
-import sys
-sys.path.append(r'C:\Users\aisha\MLPipeline\MLPipeline\src')
 import unittest
 from unittest.mock import patch
 import pandas as pd
