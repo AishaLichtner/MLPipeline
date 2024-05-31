@@ -28,6 +28,14 @@ jobs:
         python -m pip install --upgrade pip
         pip install pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: Debugging
+      run: |
+        echo "Current directory contents:"
+        ls -l
+        echo "Python path:"
+        echo $PYTHONPATH  # This should show the Python path used by GitHub Actions
+        echo "Contents of preprocess module file:"
+        cat /path/to/your/module/preprocess.py  # Replace with the actual path
     - name: Test with pytest
       run: |
         pytest
