@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 import pandas as pd
 import numpy as np
-import preprocess as pr
+import src.preprocess as pr
 
 class TestPreprocess(unittest.TestCase):
     def test_normalize_outliers_interpolate_approach(self):
