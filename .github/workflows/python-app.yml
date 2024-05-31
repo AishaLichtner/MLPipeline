@@ -28,6 +28,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install pytest
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+    - name: Set Python Path
+      run: |
+        echo "PYTHONPATH=$(pwd)/src" >> $GITHUB_ENV
     - name: Debugging
       run: |
         echo "Current directory contents:"
