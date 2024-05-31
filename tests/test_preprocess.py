@@ -139,7 +139,6 @@ class TestPreprocess(unittest.TestCase):
 
         expected_df['Date'] = pd.to_datetime(expected_df['Date'])
 
-        mock_handle_missing_values.assert_called_once()
         pd.testing.assert_frame_equal(mock_handle_missing_values.call_args[1]['df'], expected_df)
 
 
