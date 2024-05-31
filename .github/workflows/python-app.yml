@@ -33,9 +33,9 @@ jobs:
         echo "Current directory contents:"
         ls -l
         echo "Python path:"
-        echo $PYTHONPATH  # This should show the Python path used by GitHub Actions
+        echo $PYTHONPATH  
         echo "Contents of preprocess module file:"
-        cat /path/to/your/module/preprocess.py  # Replace with the actual path
+        cat src/preprocess.py
     - name: Test with pytest
       run: |
         pytest
